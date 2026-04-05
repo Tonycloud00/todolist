@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>To Do 💰 加油！</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
+        
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+        }
+
+        .task-card {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            animation: slideIn 0.3s ease-out forwards;
+        }
+
+        .task-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        .completed-text {
+            text-decoration: line-through;
+            color: #9ca3af;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
+
+        .encouragement-pop {
+            animation: popUp 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            opacity: 1;
+        }
+
+        .encouragement-fade {
+            transition: opacity 0.5s ease;
+            opacity: 0;
+        }
+
+        @keyframes popUp {
+            0% { transform: scale(0.5); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div id="app" class="max-w-md mx-auto bg-white rounded-3xl shadow-2xl overflow-hidden">
+        <!-- Header -->
+        <div class="bg-indigo-600 p-8 text-white relative">
+            <div class="flex justify-between items-start mb-4">
+                <div>
+                    <h1 class="text-3xl font-bold tracking-tight flex items-center gap-2">
+                        To Do <span class="text-4xl">💰</span>
+                    </h1>
+                    <div class="mt-2 inline-block bg-white/20 px-3 py-1 rounded-lg backdrop-blur-sm text-sm font-medium">
+                        加油！
+                    </div>
+                </div>
+                <div class="text-right">
+                    <span id="date-display" class="text-indigo-100 text-sm block"></span>
+                    <span id="encouragement-msg" class="text-yellow-400 font-bold text-lg h-7 block mt-1 transition-opacity duration-500 opacity-0"></span>
+                </div>
+            </div>
+            <div class="flex gap-2">
+                <div class="flex-1">
+                    <p class="text-indigo-100 text-xs uppercase tracking-wider mb-1">今日進度</p>
+                    <div class="w-full bg-indigo-800 rounded-full h-2">
+                        <div id="progress-bar" class="bg-emerald-400 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <span id="stats-text" class="text-xs font-medium">0/0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-6 border-b border-gray-100">
+            <form id="todo-form" class="flex gap-2">
+                <input 
+                    type="text" 
+                    id="todo-input"
+                    placeholder="新增一項任務..." 
+                    class="flex-1 px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-gray-700"
+                >
+                <button 
+                    type="submit"
+                    class="bg-indigo-600 hover:bg-indigo-700 text-white w-12 h-12 rounded-xl flex items-center justify-center transition-colors shadow-lg shadow-indigo-200"
+                >
+                    <i class="fas fa-plus"></i>
+                </button>
+            </form>
+        </div>
+
+        <!-- List Area -->
+        <div class="p-6 max-h-[500px] overflow-y-auto custom-scrollbar">
+            <div id="todo-list" class="space-y-3">
+                <div id="empty-state" class="text-center py-12 text-gray-400">
+                    <i class="fas fa-clipboard-list text-4xl mb-3 block opacity-20"></i>
+                    <p>目前沒有任何任務</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer Stats -->
+        <div class="px-6 py-4 bg-gray-50 flex justify-between items-center text-sm text-gray-500">
+            <button id="clear-completed" class="hover:text-red-500 transition-colors">清除 24H 前已完成</button>
+            <div class="flex gap-3">
+                <span id="filter-all" class="cursor-pointer font-bold text-indigo-600">全部</span>
+                <span id="filter-active" class="cursor-pointer hover:text-indigo-600">進行中</span>
+                <span id="filter-done" class="cursor-pointer hover:text-indigo-600">已完成</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class Task {
+            constructor(content) {
+                this.id = Date.now() + Math.random().toString(36).substr(2, 9);
+                this.content = content;
+                this.isCompleted = false;
+                this.createdAt = new Date();
+                this.completedAt = null;
+            }
+        }
+
+        class TodoApp {
+            constructor() {
+                this.tasks = [];
+                this.filter = 'all'; 
+                this.msgTimer = null;
+                this.storageKey = 'my-todo-app-tasks';
+                
+                this.form = document.getElementById('todo-form');
+                this.input = document.getElementById('todo-input');
+                this.listContainer = document.getElementById('todo-list');
+                this.progressBar = document.getElementById('progress-bar');
+                this.statsText = document.getElementById('stats-text');
+                this.emptyState = document.getElementById('empty-state');
+                this.encouragementEl = document.getElementById('encouragement-msg');
+                
+                this.init();
+            }
+
+            init() {
+                // 載入本地儲存的資料
+                this.loadFromLocalStorage();
+
+                this.updateClock();
+                setInterval(() => this.updateClock(), 1000 * 60);
+
+                this.form.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    this.addTask();
+                });
+
+                document.getElementById('clear-completed').onclick = () => this.autoCleanup(true);
+                
+                document.getElementById('filter-all').onclick = () => this.setFilter('all');
+                document.getElementById('filter-active').onclick = () => this.setFilter('active');
+                document.getElementById('filter-done').onclick = () => this.setFilter('done');
+
+                setInterval(() => this.autoCleanup(), 1000 * 60 * 60);
+                this.autoCleanup();
+            }
+
+            // 儲存到本地
+            saveToLocalStorage() {
+                localStorage.setItem(this.storageKey, JSON.stringify(this.tasks));
+            }
+
+            // 從本地載入
+            loadFromLocalStorage() {
+                const savedData = localStorage.getItem(this.storageKey);
+                if (savedData) {
+                    try {
+                        this.tasks = JSON.parse(savedData);
+                        this.render();
+                    } catch (e) {
+                        console.error("無法解析儲存的資料", e);
+                        this.tasks = [];
+                    }
+                }
+            }
+
+            updateClock() {
+                const now = new Date();
+                const options = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' };
+                document.getElementById('date-display').textContent = now.toLocaleDateString('zh-TW', options);
+            }
+
+            autoCleanup(manual = false) {
+                const oneDayInMs = 24 * 60 * 60 * 1000;
+                const now = new Date().getTime();
+                
+                const initialLength = this.tasks.length;
+                this.tasks = this.tasks.filter(task => {
+                    if (task.isCompleted && task.completedAt) {
+                        const timeDiff = now - new Date(task.completedAt).getTime();
+                        return manual ? false : timeDiff < oneDayInMs;
+                    }
+                    return true;
+                });
+
+                if (initialLength !== this.tasks.length) {
+                    this.saveToLocalStorage();
+                    this.render();
+                } else if (manual) {
+                    this.render(); // 如果是手動清除即使沒變動也重新渲染確保 UI 同步
+                }
+            }
+
+            addTask() {
+                const content = this.input.value.trim();
+                if (!content) return;
+                const newTask = new Task(content);
+                this.tasks.push(newTask);
+                this.input.value = '';
+                this.saveToLocalStorage();
+                this.render();
+            }
+
+            deleteTask(id) {
+                this.tasks = this.tasks.filter(t => t.id !== id);
+                this.saveToLocalStorage();
+                this.render();
+            }
+
+            toggleTask(id) {
+                const task = this.tasks.find(t => t.id === id);
+                if (task) {
+                    const wasCompleted = task.isCompleted;
+                    task.isCompleted = !task.isCompleted;
+                    task.completedAt = task.isCompleted ? new Date() : null;
+                    
+                    if (task.isCompleted && !wasCompleted) {
+                        this.handleEncouragement();
+                    }
+                    this.saveToLocalStorage();
+                    this.render();
+                }
+            }
+
+            handleEncouragement() {
+                const total = this.tasks.length;
+                const completed = this.tasks.filter(t => t.isCompleted).length;
+                
+                const message = (completed === total && total > 0) 
+                                ? "Excellent！" 
+                                : "You are so good！";
+
+                this.showEncouragement(message);
+            }
+
+            showEncouragement(msg) {
+                if (this.msgTimer) clearTimeout(this.msgTimer);
+
+                this.encouragementEl.textContent = msg;
+                this.encouragementEl.classList.remove('opacity-0', 'encouragement-fade');
+                this.encouragementEl.classList.add('opacity-100', 'encouragement-pop');
+                
+                this.msgTimer = setTimeout(() => {
+                    this.encouragementEl.classList.replace('opacity-100', 'opacity-0');
+                    this.encouragementEl.classList.add('encouragement-fade');
+                }, 5000);
+            }
+
+            setFilter(type) {
+                this.filter = type;
+                ['all', 'active', 'done'].forEach(t => {
+                    const el = document.getElementById(`filter-${t}`);
+                    if (t === type) el.classList.add('font-bold', 'text-indigo-600');
+                    else el.classList.remove('font-bold', 'text-indigo-600');
+                });
+                this.render();
+            }
+
+            updateProgress() {
+                const total = this.tasks.length;
+                const completed = this.tasks.filter(t => t.isCompleted).length;
+                const percent = total === 0 ? 0 : (completed / total) * 100;
+                
+                this.progressBar.style.width = `${percent}%`;
+                this.statsText.textContent = `${completed}/${total}`;
+            }
+
+            render() {
+                const existingCards = this.listContainer.querySelectorAll('.task-card');
+                existingCards.forEach(card => card.remove());
+
+                let displayTasks = [...this.tasks];
+
+                if (this.filter === 'all') {
+                    displayTasks.sort((a, b) => {
+                        if (a.isCompleted === b.isCompleted) {
+                            return new Date(b.createdAt) - new Date(a.createdAt);
+                        }
+                        return a.isCompleted ? 1 : -1; 
+                    });
+                } else if (this.filter === 'active') {
+                    displayTasks = this.tasks.filter(t => !t.isCompleted);
+                } else if (this.filter === 'done') {
+                    displayTasks = this.tasks.filter(t => t.isCompleted);
+                }
+
+                if (displayTasks.length === 0) {
+                    this.emptyState.style.display = 'block';
+                } else {
+                    this.emptyState.style.display = 'none';
+                    displayTasks.forEach(task => {
+                        const taskElement = this.createTaskElement(task);
+                        this.listContainer.appendChild(taskElement);
+                    });
+                }
+                this.updateProgress();
+            }
+
+            createTaskElement(task) {
+                const div = document.createElement('div');
+                div.className = 'task-card flex items-center gap-4 p-4 bg-sky-50 border border-sky-100 rounded-2xl group';
+                
+                div.innerHTML = `
+                    <div class="flex-shrink-0">
+                        <button class="check-btn w-6 h-6 rounded-full border-2 ${task.isCompleted ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300'} flex items-center justify-center transition-all hover:border-emerald-500">
+                            ${task.isCompleted ? '<i class="fas fa-check text-white text-xs"></i>' : ''}
+                        </button>
+                    </div>
+                    <div class="flex-1 min-w-0 cursor-pointer">
+                        <p class="text-sm font-medium transition-all ${task.isCompleted ? 'completed-text' : 'text-sky-900'} truncate">
+                            ${task.content}
+                        </p>
+                    </div>
+                    <div class="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button class="delete-btn text-sky-200 hover:text-red-500 p-2">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                `;
+
+                div.querySelector('.check-btn').onclick = (e) => {
+                    e.stopPropagation();
+                    this.toggleTask(task.id);
+                };
+                div.querySelector('.flex-1').onclick = () => this.toggleTask(task.id);
+                div.querySelector('.delete-btn').onclick = (e) => {
+                    e.stopPropagation();
+                    this.deleteTask(task.id);
+                };
+
+                return div;
+            }
+        }
+
+        window.onload = () => {
+            new TodoApp();
+        };
+    </script>
+</body>
+</html>
